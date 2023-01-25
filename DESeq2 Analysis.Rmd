@@ -1,0 +1,117 @@
+---
+title: "DESeq2 Analysis"
+output: html_notebook
+---
+
+#Load DESeq2, tximport to load Salmon quantified reads into DESeq2, and ashr for log fold change shrinkage
+#Also load the tx2gene file so that DESeq2 output will be in common names rather than SGD IDs
+```{r}
+library(DESeq2)
+library(tximport)
+library(ashr)
+
+tx2gene <- read.table("tx2gene.txt", header=TRUE)
+
+```
+
+#Analyze translational efficiencies (TE)
+```{r}
+samples_TE <- read.table("samples_TE.txt", header=TRUE)
+
+samples_TE$condition <- factor(samples_TE$condition, levels = c("wt25", "wt37", "ts25", "ts37"))
+
+samples_TE$type <- factor(samples_TE$type, levels = c("RNA", "RPF"))
+
+files_TE <- file.path(samples_TE$file)
+
+txi_TE <- tximport(files_TE, type = "salmon", tx2gene = tx2gene)
+
+ddsTxi_TE <- DESeqDataSetFromTximport(txi_TE, colData = samples_TE, design = ~ condition + condition:type)
+
+dds_TE <- DESeq(ddsTxi_TE)
+
+#compare the cdc33-4ts-2 strain to the CDC33 strain at the restrictive condition, normalizing to the respective strain at the permissive condition
+#These values to be plotted in Figure 3A
+differential_TE <- lfcShrink(dds_TE, contrast=list(c("conditionts37.typeRPF", "conditionwt25.typeRPF"),c("conditionwt37.typeRPF","conditionts25.typeRPF")), type="ashr")
+
+#These values to be plotted in Figure 2C
+ts37vts25_TE <- lfcShrink(dds_TE, contrast=list("conditionts37.typeRPF", "conditionts25.typeRPF"), type="ashr")
+wt37vwt25_TE <- lfcShrink(dds_TE, contrast=list("conditionwt37.typeRPF", "conditionwt25.typeRPF"), type="ashr")
+
+```
+
+#Analyze ribosome profiling
+```{r}
+samples_rpf <- read.table("samples_rpf.txt", header=TRUE)
+
+samples_rpf$temp <- factor(samples_rpf$temp, levels = c("25", "37"))
+
+samples_rpf$strain <- factor(samples_rpf$strain, levels = c("wt", "ts"))
+
+files_rpf <- file.path(samples_rpf$file)
+
+txi_rpf <- tximport(files_rpf, type = "salmon", tx2gene = tx2gene)
+
+ddsTxi_rpf <- DESeqDataSetFromTximport(txi_rpf, colData = samples_rpf, design = ~ strain + temp + strain:temp)
+
+dds_rpf <- DESeq(ddsTxi_rpf)
+
+#These values to be plotted in Figure 3A
+differential_rpf <- lfcShrink(dds_rpf, coef = "straints.temp37", type="ashr")
+
+#These values to be plotted in Figure 2C
+ts37vts25_rpf <- lfcShrink(dds_rpf, contrast = list(c("temp_37_vs_25", "straints.temp37")), type="ashr")
+wt37vwt25_rpf <- lfcShrink(dds_rpf, contrast = c("temp", "37", "25"), type="ashr")
+
+```
+
+#Analyze RNA-seq
+```{r}
+samples_rna <- read.table("samples_rna.txt", header=TRUE)
+
+samples_rna$temp <- factor(samples_rna$temp, levels = c("25", "37"))
+
+samples_rna$strain <- factor(samples_rna$strain, levels = c("wt", "ts"))
+
+files_rna <- file.path(samples_rna$file)
+
+txi_rna <- tximport(files_rna, type = "salmon", tx2gene = tx2gene)
+
+ddsTxi_rna <- DESeqDataSetFromTximport(txi_rna, colData = samples_rna, design = ~ strain + temp + strain:temp)
+
+dds_rna <- DESeq(ddsTxi_rna)
+
+#These values to be plotted in Figure 3A
+differential_rna <- lfcShrink(dds_rna, coef = "straints.temp37", type="ashr")
+
+#These values to be plotted in Figure 2C
+ts37vts25_rna <- lfcShrink(dds_rna, contrast = list(c("temp_37_vs_25", "straints.temp37")), type="ashr")
+wt37vwt25_rna <- lfcShrink(dds_rna, contrast = c("temp", "37", "25"), type="ashr")
+
+```
+
+#Heatmap and PCA
+```{r}
+library(pheatmap)
+
+#blind transform since we are doing quality control
+vsd_te <- vst(dds_TE, blind=TRUE)
+vsd_rpf <- vst(dds_rpf, blind=TRUE)
+vsd_rna <- vst(dds_rna, blind=TRUE)
+
+#calculate sample to sample distances
+te_dists <- dist(t(assay(vsd_te)))
+rpf_dists <- dist(t(assay(vsd_rpf)))
+rna_dists <- dist(t(assay(vsd_rna)))
+
+#plot heatmaps with clustering based on sample to sample distances
+pheatmap(as.matrix(te_dists), clustering_distance_rows = te_dists, clustering_distance_cols = te_dists)
+pheatmap(as.matrix(te_dists), clustering_distance_rows = te_dists, clustering_distance_cols = te_dists)
+pheatmap(as.matrix(te_dists), clustering_distance_rows = te_dists, clustering_distance_cols = te_dists)
+
+#Get PCA values
+plotPCA(vsd, intgroup = c("condition", "type"), returnData = TRUE)
+plotPCA(vsd, intgrou = c("condition", "type"), returnData = TRUE)
+plotPCA(vsd, intgroup = c("condition", "type"), returnData = TRUE)
+
+```
